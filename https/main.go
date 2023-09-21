@@ -163,7 +163,7 @@ func clone(idGroup string, token string, root_dir string, user string) {
 	}
 
 	// SUBGROUB
-	resp_sub, err := http.Get("https://git.preprod.mangopay.com/api/v4/groups/" + idGroup + "/subgroups?private_token=" + token + "&per_page=100000")
+	resp_sub, err := http.Get("https://gitlab.com/api/v4/groups/" + idGroup + "/subgroups?private_token=" + token + "&per_page=100000")
 	if err != nil {
 		fmt.Print(err)
 	}
