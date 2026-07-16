@@ -8,13 +8,17 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	ghttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-
-	"github.com/go-git/go-git/v5"
 )
 
-type Response struct {
+type ResponseP []struct {
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	NameWithNamespace string `json:"name_with_namespace"`
+	WebURL            string `json:"web_url"`
+	Path              string `json:"path"`
+}
+
+/* type Response struct {
 	ID          int    `json:"id"`
 	WebURL      string `json:"web_url"`
 	Name        string `json:"name"`
@@ -106,7 +110,7 @@ type Response struct {
 		RunnerTokenExpirationInterval             interface{}   `json:"runner_token_expiration_interval"`
 	} `json:"projects"`
 	SharedProjects []interface{} `json:"shared_projects"`
-}
+} */
 
 type SubGroups []struct {
 	ID                             int         `json:"id"`
@@ -133,36 +137,63 @@ type SubGroups []struct {
 	ParentID                       int         `json:"parent_id"`
 }
 
-const gitlabUrl := "https://gitlab.datanumia.com"
+const gitlabUrl = "https://gitlab.datanumia.com"
 
-func clone(idGroup string, token string, root_dir string, user string) {
-	resp, err := http.Get( gitlabUrl + "/v4/groups/" + idGroup + "?private_token=" + token + "&per_page=100000")
+// Payload pour l'API GitLab
+type NotificationPayload struct {
+	Level string `json:"level"`
+}
+
+func clone(idGroup string, token string, user string, compteur *int) {
+	*compteur++
+
+	//getGroupURL := fmt.Sprintf("%s/api/v4/groups/%s?private_token=%s&per_page=2", gitlabUrl, idGroup, token)
+	// TODO Gather all projects in one list.
+	// If a list have more than 100 items then we request the following pages.
+	// While fetchedItems are equals to 100 continue and request the next page. Gather all of them in a Set.
+	getGroupURL := fmt.Sprintf("%s/api/v4/groups/%s/projects?private_token=%s&per_page=100&page=3", gitlabUrl, idGroup, token)
+
+	resp, err := http.Get(getGroupURL)
 	if err != nil {
 		fmt.Print(err)
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	var result Response
+	var result ResponseP
 	if err := json.Unmarshal(body, &result); err != nil { // Parse []byte to go struct pointer
 		fmt.Println("Can not unmarshal JSON")
 	}
 
-	for _, s := range result.Projects {
-		_, err = git.PlainClone(root_dir+s.Path, false, &git.CloneOptions{
-			URL: s.HTTPURLToRepo,
-			Auth: &ghttp.BasicAuth{
-				Username: user,
-				Password: token,
-			},
-		})
+	client := &http.Client{}
 
-		fmt.Println("clone " + s.HTTPURLToRepo)
-		fmt.Println("in  " + root_dir + s.Path)
+	// UPDATE NOTIFICATION POUR CHAQUE PROJET
+	for _, s := range result {
+		currentURL := fmt.Sprintf("%s/api/v4/projects/%s/notification_settings?level=%s", gitlabUrl, strconv.Itoa(s.ID), "mention")
+		req, err := http.NewRequest(http.MethodPut, currentURL, nil)
+		req.Header.Set("PRIVATE-TOKEN", token)
+
+		respPut, err := client.Do(req)
 		if err != nil {
-			fmt.Println("erro " + s.HTTPURLToRepo)
 			fmt.Println(err)
 		}
+
+		//fmt.Println("Le projet " + s.Path + " a désormais la notification mention. HTTP CALL status : " + resPut.Status)
+		fmt.Println("Le projet " + s.Name + " a désormais la notification mention. HTTP CALL status : " + respPut.Status)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		*compteur++
 	}
+
+	// UPDATE NOTIFICATION DU GROUPE COURANT
+	updateGroupNotificationUrl := fmt.Sprintf("%s/api/v4/groups/%s/notification_settings?level=%s", gitlabUrl, idGroup, "mention")
+	updateGroupNotificationReq, err := http.NewRequest(http.MethodPut, updateGroupNotificationUrl, nil)
+	updateGroupNotificationReq.Header.Set("PRIVATE-TOKEN", token)
+
+	respGroupNotification, err := client.Do(updateGroupNotificationReq)
+
+	fmt.Println("Le groupe " + idGroup + " a désormais la notification mention. HTTP CALL status : " + respGroupNotification.Status)
 
 	// SUBGROUB
 	resp_sub, err := http.Get(gitlabUrl + "/api/v4/groups/" + idGroup + "/subgroups?private_token=" + token + "&per_page=100000")
@@ -177,14 +208,15 @@ func clone(idGroup string, token string, root_dir string, user string) {
 	}
 
 	for _, s := range result_sub {
-		clone(strconv.Itoa(s.ID), token, root_dir+s.Path+string(os.PathSeparator), user)
+		clone(strconv.Itoa(s.ID), token, user, compteur)
 	}
 }
 
 func main() {
 	idRoot := os.Args[1]
 	token := os.Args[2]
-	root_dir := os.Args[3]
-	user := os.Args[4]
-	clone(idRoot, token, root_dir+string(os.PathSeparator), user)
+	user := os.Args[3]
+	compteur := 0
+	clone(idRoot, token, user, &compteur)
+	println("nombre d'operation manuel évité : " + strconv.Itoa(compteur))
 }

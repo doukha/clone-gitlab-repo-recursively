@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+type ResponseP []struct {
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	NameWithNamespace string `json:"name_with_namespace"`
+	WebURL            string `json:"web_url"`
+}
+
 type Response struct {
 	ID          int    `json:"id"`
 	WebURL      string `json:"web_url"`
@@ -139,7 +146,8 @@ type NotificationPayload struct {
 func clone(idGroup string, token string, user string, compteur *int) {
 	*compteur++
 
-	getGroupURL := fmt.Sprintf("%s/api/v4/groups/%s?private_token=%s&per_page=100000", gitlabUrl, idGroup, token)
+	//getGroupURL := fmt.Sprintf("%s/api/v4/groups/%s?private_token=%s&per_page=2", gitlabUrl, idGroup, token)
+	getGroupURL := fmt.Sprintf("%s/api/v4/groups/%s/projects?private_token=%s&per_page=9", gitlabUrl, idGroup, token)
 
 	resp, err := http.Get(getGroupURL)
 	if err != nil {
@@ -147,7 +155,7 @@ func clone(idGroup string, token string, user string, compteur *int) {
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	var result Response
+	var result ResponseP
 	if err := json.Unmarshal(body, &result); err != nil { // Parse []byte to go struct pointer
 		fmt.Println("Can not unmarshal JSON")
 	}
@@ -155,7 +163,7 @@ func clone(idGroup string, token string, user string, compteur *int) {
 	client := &http.Client{}
 
 	// UPDATE NOTIFICATION POUR CHAQUE PROJET
-	for _, s := range result.Projects {
+	for _, s := range result {
 		currentURL := fmt.Sprintf("%s/api/v4/projects/%s/notification_settings?level=%s", gitlabUrl, strconv.Itoa(s.ID), "mention")
 		req, err := http.NewRequest(http.MethodPut, currentURL, nil)
 		req.Header.Set("PRIVATE-TOKEN", token)
@@ -165,7 +173,8 @@ func clone(idGroup string, token string, user string, compteur *int) {
 			fmt.Println(err)
 		}
 
-		fmt.Println("Le projet " + s.Path + " a désormais la notification mention. HTTP CALL status : " + resp.Status)
+		//fmt.Println("Le projet " + s.Path + " a désormais la notification mention. HTTP CALL status : " + resp.Status)
+		fmt.Println("Le projet " + s.Name + " a désormais la notification mention. HTTP CALL status : " + resp.Status)
 
 		if err != nil {
 			fmt.Println(err)
@@ -174,14 +183,12 @@ func clone(idGroup string, token string, user string, compteur *int) {
 	}
 
 	// UPDATE NOTIFICATION DU GROUPE COURANT
-	// TODO : curl --request PUT --header "PRIVATE-TOKEN: <your_access_token>"  --url "https://gitlab.example.com/api/v4/groups/5/notification_settings?level=watch"
 	updateGroupNotificationUrl := fmt.Sprintf("%s/api/v4/groups/%s/notification_settings?level=%s", gitlabUrl, idGroup, "mention")
 	updateGroupNotificationReq, err := http.NewRequest(http.MethodPut, updateGroupNotificationUrl, nil)
 	updateGroupNotificationReq.Header.Set("PRIVATE-TOKEN", token)
 
 	respGroupNotification, err := client.Do(updateGroupNotificationReq)
 
-	//	fmt.Print(res2)
 	fmt.Println("Le groupe " + idGroup + " a désormais la notification mention. HTTP CALL status : " + respGroupNotification.Status)
 
 	// SUBGROUB
@@ -197,11 +204,12 @@ func clone(idGroup string, token string, user string, compteur *int) {
 	}
 
 	for _, s := range result_sub {
-		clone(strconv.Itoa(s.ID), token, user, i)
+		clone(strconv.Itoa(s.ID), token, user, compteur)
 	}
 }
 
 func main() {
+
 	idRoot := os.Args[1]
 	token := os.Args[2]
 	user := os.Args[3]
@@ -209,3 +217,5 @@ func main() {
 	clone(idRoot, token, user, &compteur)
 	println("nombre d'operation manuel évité : " + strconv.Itoa(compteur))
 }
+
+//part-consent-sy
